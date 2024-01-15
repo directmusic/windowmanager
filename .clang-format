@@ -1,0 +1,9 @@
+---
+BasedOnStyle: WebKit
+AlignAfterOpenBracket: Align
+BreakBeforeBraces: Attach
+MaxEmptyLinesToKeep: '1'
+NamespaceIndentation: None
+SortIncludes: 'true'
+...
+  
