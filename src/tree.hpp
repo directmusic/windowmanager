@@ -5,6 +5,12 @@
 #include <memory>
 #include <queue>
 
+#define USE_UNDOCUMENTED_API
+
+#if defined(USE_UNDOCUMENTED_API)
+extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID* out);
+#endif
+
 bool set_window_rect(const WindowInfo& window, WmRect new_pos) {
     std::cout << "Setting window rect to "
               << "x: " << new_pos.x << ", y: " << new_pos.y << ", w: " << new_pos.w << ", h:" << new_pos.h << std::endl;
@@ -16,25 +22,51 @@ bool set_window_rect(const WindowInfo& window, WmRect new_pos) {
         std::cerr << "Could not create AXUIElement for PID " << window.pid << std::endl;
         return false;
     }
-    AXUIElementRef window_ref = NULL;
-    AXError error = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute, (CFTypeRef*)&window_ref);
-    if (error != kAXErrorSuccess || !window_ref) {
-        std::cerr << "Could not get window:  " << window.title << std::endl;
-        if (app)
-            CFRelease(app);
+
+    CFArrayRef windows;
+    AXError error = AXUIElementCopyAttributeValues(app, kAXWindowsAttribute, 0, 100, &windows);
+    if (error != kAXErrorSuccess) {
+        std::cerr << "Could not get windows for app " << window.title << std::endl;
+        CFRelease(app);
         return false;
     }
 
-    AXValueRef origin_value = AXValueCreate((AXValueType)kAXValueCGPointType, &new_origin);
-    AXUIElementSetAttributeValue(window_ref, kAXPositionAttribute, origin_value);
-    CFRelease(origin_value);
+    for (CFIndex i = 0; i < CFArrayGetCount(windows); i++) {
+        AXUIElementRef window_ref = (AXUIElementRef)CFArrayGetValueAtIndex(windows, i);
+#if defined(USE_UNDOCUMENTED_API)
+        CGWindowID id;
+        _AXUIElementGetWindow(window_ref, &id);
 
-    AXValueRef size_value = AXValueCreate((AXValueType)kAXValueCGSizeType, &new_size);
-    AXUIElementSetAttributeValue(window_ref, kAXSizeAttribute, size_value);
-    CFRelease(size_value);
+        if (id == window.window_id) {
+            AXValueRef origin_value = AXValueCreate((AXValueType)kAXValueCGPointType, &new_origin);
+            AXUIElementSetAttributeValue(window_ref, kAXPositionAttribute, origin_value);
+            CFRelease(origin_value);
 
-    if (window_ref)
-        CFRelease(window_ref);
+            AXValueRef size_value = AXValueCreate((AXValueType)kAXValueCGSizeType, &new_size);
+            AXUIElementSetAttributeValue(window_ref, kAXSizeAttribute, size_value);
+            CFRelease(size_value);
+        }
+#else
+        CFStringRef title_ref;
+        AXUIElementCopyAttributeValue(window_ref, kAXTitleAttribute, (CFTypeRef*)&title_ref);
+        if (title_ref) {
+            char title[256];
+            CFStringGetCString(title_ref, title, 256, kCFStringEncodingUTF8);
+            if (std::string(title) == window.title) {
+                AXValueRef origin_value = AXValueCreate((AXValueType)kAXValueCGPointType, &new_origin);
+                AXUIElementSetAttributeValue(window_ref, kAXPositionAttribute, origin_value);
+                CFRelease(origin_value);
+
+                AXValueRef size_value = AXValueCreate((AXValueType)kAXValueCGSizeType, &new_size);
+                AXUIElementSetAttributeValue(window_ref, kAXSizeAttribute, size_value);
+                CFRelease(size_value);
+            }
+        }
+#endif
+    }
+
+    if (windows)
+        CFRelease(windows);
     if (app)
         CFRelease(app);
     return true;
